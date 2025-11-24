@@ -288,6 +288,13 @@ namespace game {
     }
 
     int MonsterSystem::shortestPathDistance(const Ghost& g,
+                                            const Tile& goal,
+                                            int maxRange) const
+    {
+        return shortestPathDistance(g, g.pos, goal, maxRange);
+    }
+
+    int MonsterSystem::shortestPathDistance(const Ghost& g,
                                             const Tile& start,
                                             const Tile& goal,
                                             int maxRange) const
@@ -526,6 +533,7 @@ namespace game {
         }
         
         int dist = shortestPathDistance(g,
+                                        g.pos,
                                         playerTile,
                                         (int)g.perceptionRange);
         bool inRange = (dist >= 0);
