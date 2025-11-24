@@ -143,6 +143,10 @@ int main() {
             
             // Check player events
             PlayerEvents playerEvents = playerController.pollEvents();
+
+            if (playerEvents.playerRespawned) {
+                monsterSystem.resetMonsters();
+            }
             
             // Handle player death - respawn is automatic, but check if game should end
             if (playerEvents.playerDied) {

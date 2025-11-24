@@ -348,6 +348,7 @@ bool PlayerController::isAtTileCenter() const {
 
             // Clear one-frame events
             events.reset();
+            events.playerRespawned = true;
         }
 
     // Handle respawn
