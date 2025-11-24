@@ -112,6 +112,11 @@ namespace game {
                                               const Tile& start,
                                               const Tile& goal) const;
 
+        // Convenience overload that starts from the ghost's current position
+        int shortestPathDistance(const Ghost& g,
+                                 const Tile& goal,
+                                 int maxRange) const;
+
         int shortestPathDistance(const Ghost& g,
                                  const Tile& start,
                                  const Tile& goal,
