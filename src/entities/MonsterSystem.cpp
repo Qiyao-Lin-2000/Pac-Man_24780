@@ -115,11 +115,9 @@ namespace game {
     bool MonsterSystem::isWalkable(int x, int y) const {
         if (!inBounds(x, y)) return false;
         int cell = map[y][x];
-        // Monsters can walk on: empty path (0), ghost house (2), dots (3), power pellets (4)
+        // Monsters can walk on: empty path (0), ghost house (2), dots (3), power pellets (4), ghost doors (5)
         // They cannot walk on walls (1)
-        // Note: Ghost doors (5) are treated as walls in map grid, but monsters should be able to pass
-        // The map grid converts doors to walls, so we check for 0, 2, 3, 4
-        return (cell == 0 || cell == 2 || cell == 3 || cell == 4);
+        return (cell == 0 || cell == 2 || cell == 3 || cell == 4 || cell == 5);
     }
     
     bool MonsterSystem::isInGhostHouse(int x, int y) const {

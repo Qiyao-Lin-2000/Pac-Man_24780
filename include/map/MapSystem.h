@@ -52,7 +52,7 @@ public:
     void resetMapState();
 
     // Get the map grid in the format expected by game components
-    // Returns a 2D vector where: 0=path, 1=wall, 2=monster room, 3=dot, 4=power pellet
+    // Returns a 2D vector where: 0=path, 1=wall, 2=monster room, 3=dot, 4=power pellet, 5=ghost door
     std::vector<std::vector<int>> getMapGrid() const;
 
 private:
