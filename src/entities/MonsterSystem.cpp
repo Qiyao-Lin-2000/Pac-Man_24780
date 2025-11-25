@@ -51,6 +51,8 @@ namespace game {
     void MonsterSystem::resetMonsters() {
         initializeGhosts();
         events.reset();
+        player = {};
+        prevPlayerTile = {};
     }
 
     void MonsterSystem::setPlayerState(const MonsterPlayerState& ps) {
@@ -136,11 +138,18 @@ namespace game {
 
     bool MonsterSystem::isWalkableForGhost(const Ghost& g, int x, int y) const {
         if (!inBounds(x, y)) return false;
+
         int cell = map[y][x];
         if (cell == 5) {
-            // Allow the door only while the ghost is inside the house or currently occupying the door tile
-            return isInGhostHouse(g.pos.x, g.pos.y) || (g.pos.x == x && g.pos.y == y);
+            // Allow door traversal when the ghost is leaving or returning to the house.
+            // This prevents jittering around the doorway while still blocking casual re-entry.
+            const bool currentlyInside = isInGhostHouse(g.pos.x, g.pos.y);
+            const bool justExited = isInGhostHouse(g.prevPos.x, g.prevPos.y);
+            const bool headingHome = g.state == GhostState::Return;
+            const bool alreadyOnDoor = (g.pos.x == x && g.pos.y == y);
+            return currentlyInside || justExited || headingHome || alreadyOnDoor;
         }
+
         return isWalkable(x, y);
     }
     
