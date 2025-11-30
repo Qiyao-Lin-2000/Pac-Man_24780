@@ -153,7 +153,10 @@ bool MapSystem::loadLevel(int levelId) {
                 monsterPos.x = x;
                 monsterPos.y = y;
                 monsterStartPositions.push_back(monsterPos);
-                tileMap[y][x] = EMPTY;  // Monster starts on empty tile
+                // Monster spawn tiles are part of the ghost house so AI logic
+                // recognizes them as being inside the house when applying
+                // spawn delays and exit rules.
+                tileMap[y][x] = GHOST_HOUSE;
             } else {
                 // Parse normal tile
                 TileType type = parseTileType(c);
@@ -231,7 +234,7 @@ std::vector<std::vector<int>> MapSystem::getMapGrid() const {
         for (int x = 0; x < mapWidth; x++) {
             TileType tile = tileMap[y][x];
             // Convert TileType to game component format:
-            // 0 = path, 1 = wall, 2 = monster room, 3 = dot, 4 = power pellet
+            // 0 = path, 1 = wall, 2 = monster room, 3 = dot, 4 = power pellet, 5 = ghost door
             switch (tile) {
                 case EMPTY:
                     grid[y][x] = 0;
@@ -249,7 +252,7 @@ std::vector<std::vector<int>> MapSystem::getMapGrid() const {
                     grid[y][x] = 4;
                     break;
                 case GHOST_DOOR:
-                    grid[y][x] = 1; // Treat door as wall for player
+                    grid[y][x] = 5; // Preserve ghost door so monsters can walk through
                     break;
             }
         }

@@ -28,13 +28,15 @@ namespace game {
         bool dotCollected = false;
         bool powerPelletCollected = false;
         bool playerDied = false;
+        bool playerRespawned = false;
         bool levelComplete = false;
         int scoreGained = 0;
-        
+
         void reset() {
             dotCollected = false;
             powerPelletCollected = false;
             playerDied = false;
+            playerRespawned = false;
             levelComplete = false;
             scoreGained = 0;
         }

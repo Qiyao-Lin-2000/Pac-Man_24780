@@ -46,6 +46,8 @@ namespace game {
         double perceptionRange = 8.0;  // Perception range (reduced from 12.0)
         double spawnDelay = 0.0;  // Delay before monster can start chasing
 
+        int exitEscortSteps = 0;  // Steps of forced chase after leaving the ghost door
+
         std::vector<Tile> patrolPath;   // loop
         std::size_t patrolIndex = 0;
 
@@ -68,6 +70,8 @@ namespace game {
         MonsterSystem(const MapGrid& mapGrid,
                       const std::vector<Tile>& spawns);
 
+        void resetMonsters();
+
         void setPlayerState(const MonsterPlayerState& ps);
 
         // renew
@@ -80,6 +84,7 @@ namespace game {
 
     private:
         const MapGrid& map;
+        std::vector<Tile> spawnTiles;
         MonsterPlayerState player{};
         Tile prevPlayerTile{}; //Record the player's previous frame
         std::vector<Ghost> ghosts;
@@ -88,7 +93,11 @@ namespace game {
         // helper
         bool inBounds(int x, int y) const;
         bool isWalkable(int x, int y) const;
+        bool isWalkableForGhost(const Ghost& g, int x, int y) const;
         bool isInGhostHouse(int x, int y) const;
+
+        Ghost createGhost(std::size_t index, const Tile& spawn) const;
+        void initializeGhosts();
 
         Tile dirToDelta(Direction d) const;
         Direction deltaToDir(const Tile& delta) const;
@@ -99,10 +108,12 @@ namespace game {
 
         std::vector<Tile> generatePatrolLoop(const Tile& start) const;
 
-        std::vector<Tile> computeShortestPath(const Tile& start,
+        std::vector<Tile> computeShortestPath(const Ghost& g,
+                                              const Tile& start,
                                               const Tile& goal) const;
 
-        int shortestPathDistance(const Tile& start,
+        int shortestPathDistance(const Ghost& g,
+                                 const Tile& start,
                                  const Tile& goal,
                                  int maxRange) const;
 
