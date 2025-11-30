@@ -249,7 +249,7 @@ std::vector<std::vector<int>> MapSystem::getMapGrid() const {
                     grid[y][x] = 4;
                     break;
                 case GHOST_DOOR:
-                    grid[y][x] = 1; // Treat door as wall for player
+                    grid[y][x] = 5;
                     break;
             }
         }

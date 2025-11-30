@@ -146,6 +146,8 @@ int main() {
             
             // Handle player death - respawn is automatic, but check if game should end
             if (playerEvents.playerDied) {
+                // When the player loses a life, also reset all ghosts so they return to their spawn positions and don't camp the respawn point.
+                monsterSystem.resetAllGhosts();
                 if (playerController.getLives() <= 0) {
                     gameState = GameScreenState::GameOver;
                 }
@@ -169,6 +171,7 @@ int main() {
                 Tile ghostPos{ghost.gridX, ghost.gridY};
                 if (playerController.checkMonsterCollision(ghostPos)) {
                     // Player hit by monster
+                    monsterSystem.resetAllGhosts();
                     if (playerController.getLives() <= 0) {
                         gameState = GameScreenState::GameOver;
                     }

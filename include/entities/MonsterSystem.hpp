@@ -38,6 +38,7 @@ namespace game {
     struct Ghost {
         Tile pos;
         Tile prevPos; //Previous frame position
+        Tile spawnPos;
         Direction dir = Direction::Right;
         GhostState state = GhostState::Patrol;
         GhostType type = GhostType::Blue;
@@ -78,6 +79,8 @@ namespace game {
 
         MonsterEvents pollEvents();
 
+        void resetAllGhosts();
+
     private:
         const MapGrid& map;
         MonsterPlayerState player{};
@@ -89,6 +92,7 @@ namespace game {
         bool inBounds(int x, int y) const;
         bool isWalkable(int x, int y) const;
         bool isInGhostHouse(int x, int y) const;
+        bool isGhostDoor(int x, int y) const;
 
         Tile dirToDelta(Direction d) const;
         Direction deltaToDir(const Tile& delta) const;

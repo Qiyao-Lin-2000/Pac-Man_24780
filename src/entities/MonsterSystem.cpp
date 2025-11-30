@@ -17,6 +17,7 @@ namespace game {
             Ghost g;
             g.pos = spawns[i];
             g.prevPos = g.pos;
+            g.spawnPos = spawns[i];
             g.dir = Direction::Right;
             g.state = GhostState::Patrol;
             g.patrolPath = generatePatrolLoop(g.pos);
@@ -52,26 +53,7 @@ namespace game {
                 g.spawnDelay -= dt;
             }
             
-            // Handle player power state - monsters should be stunned when player is powered
-            if (player.isPowered) {
-                if (g.state != GhostState::Stunned && g.state != GhostState::Return) {
-                    g.state = GhostState::Stunned;
-                    g.stunTimer = 8.0; // Match player power duration
-                }
-            } else {
-                // Player not powered - if stunned, let timer run out
-                if (g.state == GhostState::Stunned) {
-                    g.stunTimer -= dt;
-                    if (g.stunTimer <= 0.0) {
-                        g.state = GhostState::Return;
-                        Tile target = nearestPatrolNode(g);
-                        g.path = computeShortestPath(g.pos, target);
-                        g.pathIndex = 0;
-                    }
-                }
-            }
-            
-            // Update animation timer (cumulative, doesn't reset)
+            // Update animation timer 
             g.animTimer += dt;
             // Keep timer reasonable (wrap at 10 seconds to prevent overflow)
             if (g.animTimer > 10.0) {
@@ -105,6 +87,30 @@ namespace game {
         return events;
     }
 
+    // Reset all ghosts after the player loses a life.
+    void MonsterSystem::resetAllGhosts() {
+        for (auto& g : ghosts) {
+            g.pos      = g.spawnPos;
+            g.prevPos  = g.spawnPos;
+            g.state    = GhostState::Patrol;
+            g.dir      = Direction::Right;
+
+            // Clear any chasing/return paths and rebuild patrol loop from spawn
+            g.path.clear();
+            g.pathIndex   = 0;
+            g.patrolPath  = generatePatrolLoop(g.spawnPos);
+            g.patrolIndex = 0;
+
+            // Reset timers and flags
+            g.stunTimer      = 0.0;
+            g.spawnDelay     = 2.0;  // small delay before they can chase again
+            g.hitFreezeSteps = 0;
+            g.animTimer      = 0.0;
+            g.moveTimer      = 0.0;
+            g.stepCounter    = 0;
+        }
+    }
+
     // helper
     bool MonsterSystem::inBounds(int x, int y) const {
         return y >= 0 && y < (int)map.size() &&
@@ -115,16 +121,20 @@ namespace game {
     bool MonsterSystem::isWalkable(int x, int y) const {
         if (!inBounds(x, y)) return false;
         int cell = map[y][x];
-        // Monsters can walk on: empty path (0), ghost house (2), dots (3), power pellets (4)
-        // They cannot walk on walls (1)
-        // Note: Ghost doors (5) are treated as walls in map grid, but monsters should be able to pass
-        // The map grid converts doors to walls, so we check for 0, 2, 3, 4
-        return (cell == 0 || cell == 2 || cell == 3 || cell == 4);
+        // Monsters can walk on: empty path (0), ghost house (2), dots (3),
+        // power pellets (4), and ghost doors (5).
+        // They cannot walk on walls (1).
+        return (cell == 0 || cell == 2 || cell == 3 || cell == 4 || cell == 5);
     }
     
     bool MonsterSystem::isInGhostHouse(int x, int y) const {
         if (!inBounds(x, y)) return false;
         return map[y][x] == 2; // Ghost house cell
+    }
+
+    bool MonsterSystem::isGhostDoor(int x, int y) const {
+        if (!inBounds(x, y)) return false;
+        return map[y][x] == 5;
     }
 
     Tile MonsterSystem::dirToDelta(Direction d) const {
@@ -196,7 +206,7 @@ namespace game {
             for (Direction d : candidates) {
                 Tile delta = dirToDelta(d);
                 Tile next{ pos.x + delta.x, pos.y + delta.y };
-                if (isWalkable(next.x, next.y)) {
+                if (isInGhostHouse(next.x, next.y)) {
                     pos = next;
                     dir = d;
                     path.push_back(pos);
@@ -242,6 +252,12 @@ namespace game {
                 Tile nxt{ cur.x + d.x, cur.y + d.y };
                 if (!inBounds(nxt.x, nxt.y)) continue;
                 if (!isWalkable(nxt.x, nxt.y)) continue;
+
+                if (isGhostDoor(nxt.x, nxt.y) &&
+                    !isInGhostHouse(cur.x, cur.y)) {
+                    continue;
+                }
+
                 if (visited[nxt.y][nxt.x]) continue;
 
                 visited[nxt.y][nxt.x] = true;
@@ -383,60 +399,76 @@ namespace game {
 
     // State Machine
     void MonsterSystem::updateGhostAI(Ghost& g, double dt) {
-        // helper: try chase; if unreachable/empty path, fall back to RETURN
-        auto setPathOrReturn = [&](Ghost& gg, const Tile& chaseTarget){
-        auto p = computeShortestPath(gg.pos, chaseTarget);
-        if (p.empty()){
-            gg.state = GhostState::Return;
-            Tile rtn = nearestPatrolNode(gg);
-            gg.path = computeShortestPath(gg.pos, rtn);
-            gg.pathIndex = 0;
-        } else {
-            gg.path = std::move(p);
-            gg.pathIndex = 0;
-        }
-    };
+
+        auto setPathOrStay = [&](Ghost& gg, const Tile& chaseTarget) {
+            auto p = computeShortestPath(gg.pos, chaseTarget);
+            if (p.empty()) {
+                gg.path.clear();
+                gg.pathIndex = 0;
+            } else {
+                gg.path = std::move(p);
+                gg.pathIndex = 0;
+            }
+        };
         Tile playerTile{ player.gridX, player.gridY };
         
         // Check if monster is in ghost house
         bool inGhostHouse = isInGhostHouse(g.pos.x, g.pos.y);
 
-        // STUNNED - handled in update() based on player power state
-        // Only handle timer here if not already handled
-        if (g.state == GhostState::Stunned && !player.isPowered) {
-            // This should not happen often since update() handles it
-            // But keep as fallback
-            return;
-        }
-
-        // If in ghost house and spawn delay not expired, stay inside and patrol
         if (inGhostHouse && g.spawnDelay > 0.0) {
-            // Keep monster in ghost house - simple up/down movement
+            // Keep monster in ghost house
             if (g.state != GhostState::Patrol) {
                 g.state = GhostState::Patrol;
-                // Generate a simple patrol path inside ghost house
                 g.patrolPath = generatePatrolLoop(g.pos);
                 g.patrolIndex = 0;
             }
-            return; // Don't exit or chase while delay active
+            return; 
         }
         
-        // If spawn delay expired and still in ghost house, try to exit
+        // exit from ghost house
         if (inGhostHouse && g.spawnDelay <= 0.0) {
-            // Find exit door (look for adjacent non-ghost-house walkable tile)
+            // 1) First, try to find an immediate adjacent exit tile
             const Tile dirs[4] = { {1,0},{-1,0},{0,1},{0,-1} };
             for (const auto& d : dirs) {
                 int nx = g.pos.x + d.x, ny = g.pos.y + d.y;
                 if (inBounds(nx, ny) && !isInGhostHouse(nx, ny) && isWalkable(nx, ny)) {
-                    // Found exit, pathfind to it
                     Tile exitTile{nx, ny};
                     g.path = computeShortestPath(g.pos, exitTile);
                     g.pathIndex = 0;
-                    g.state = GhostState::Return; // Use Return state to exit
+                    g.state = GhostState::Patrol; 
                     return;
                 }
             }
-            // Can't find exit, stay in patrol
+
+            // 2) Fallback: search for a ghost door tile anywhere on the map
+            Tile bestExit{ -1, -1 };
+            int bestLen = std::numeric_limits<int>::max();
+
+            const int H = (int)map.size();
+            const int W = map.empty() ? 0 : (int)map[0].size();
+
+            for (int y = 0; y < H; ++y) {
+                for (int x = 0; x < W; ++x) {
+                    if (!isGhostDoor(x, y)) {
+                        continue;
+                    }
+                    Tile exitTile{ x, y };
+                    auto p = computeShortestPath(g.pos, exitTile);
+                    if (!p.empty() && (int)p.size() < bestLen) {
+                        bestLen = (int)p.size();
+                        bestExit = exitTile;
+                    }
+                }
+            }
+
+            if (bestExit.x != -1) {
+                g.path = computeShortestPath(g.pos, bestExit);
+                g.pathIndex = 0;
+                g.state = GhostState::Patrol;
+                return;
+            }
+
+            // Can't find exit at all, stay in patrol
             return;
         }
 
@@ -449,12 +481,11 @@ namespace game {
                 if (inRange) {
                     Tile target = computeChaseTarget(g, playerTile);
                     g.state = GhostState::Chase;
-                    setPathOrReturn(g, target);
+                    setPathOrStay(g, target);
                 } else if (g.state == GhostState::Chase) {
                     // Lost player, return to patrol
-                    g.state = GhostState::Return;
-                    Tile target = nearestPatrolNode(g);
-                    g.path = computeShortestPath(g.pos, target);
+                    g.state = GhostState::Patrol;
+                    g.path.clear();
                     g.pathIndex = 0;
                 }
             }
@@ -463,7 +494,7 @@ namespace game {
 
         // Other ghosts - only chase if spawn delay is over and outside ghost house
         if (g.spawnDelay > 0.0 || inGhostHouse) {
-            return; // Still in spawn delay or ghost house, stay in patrol
+            return; 
         }
         
         int dist = shortestPathDistance(g.pos,
@@ -476,41 +507,19 @@ namespace game {
 
         if (g.state == GhostState::Patrol) {
             if (inRange) {
+                // Chase 
                 g.state = GhostState::Chase;
-                setPathOrReturn(g, chaseTarget);
+                setPathOrStay(g, chaseTarget);
             }
         }
         else if (g.state == GhostState::Chase) {
             if (!inRange) {
-                g.state = GhostState::Return;
-                Tile target = nearestPatrolNode(g);
-                g.path  = computeShortestPath(g.pos, target);
-                g.pathIndex = 0;
-            } else {
-                setPathOrReturn(g, chaseTarget);
-            }
-        }
-        else if (g.state == GhostState::Return) {
-            if (inRange) {
-                g.state = GhostState::Chase;
-                setPathOrReturn(g, chaseTarget);
-            } else if (onPatrolPath(g)) {
-                // Reached patrol path, switch to patrol
+                // Lost player, simply fall back to patrol.
                 g.state = GhostState::Patrol;
                 g.path.clear();
                 g.pathIndex = 0;
-            } else if (g.path.empty() || g.pathIndex >= g.path.size()) {
-                // Path completed or empty, try to find patrol path or switch to patrol
-                Tile target = nearestPatrolNode(g);
-                if (target != g.pos) {
-                    g.path = computeShortestPath(g.pos, target);
-                    g.pathIndex = 0;
-                } else {
-                    // Can't find patrol path, switch to patrol mode anyway
-                    g.state = GhostState::Patrol;
-                    g.path.clear();
-                    g.pathIndex = 0;
-                }
+            } else {
+                setPathOrStay(g, chaseTarget);
             }
         }
     }
@@ -520,11 +529,55 @@ namespace game {
         g.prevPos = g.pos;
 
         if (g.hitFreezeSteps > 0) {
-        --g.hitFreezeSteps;
-        return;
-      }
+            --g.hitFreezeSteps;
+            return;
+        }
 
-        if (g.state == GhostState::Stunned) return;
+        if (player.isPowered) {
+            Tile playerTile{ player.gridX, player.gridY };
+
+            Direction bestDir = g.dir;
+            bool hasBest = false;
+            int bestDist2 = -1;
+
+            Direction dirs[4] = {
+                Direction::Up,
+                Direction::Down,
+                Direction::Left,
+                Direction::Right
+            };
+
+            for (Direction d : dirs) {
+                Tile delta = dirToDelta(d);
+                int nx = g.pos.x + delta.x;
+                int ny = g.pos.y + delta.y;
+
+                if (!isWalkable(nx, ny)) {
+                    continue;
+                }
+
+                if (isGhostDoor(nx, ny) && !isInGhostHouse(g.pos.x, g.pos.y)) {
+                    continue;
+                }
+
+                int dx = nx - playerTile.x;
+                int dy = ny - playerTile.y;
+                int dist2 = dx * dx + dy * dy;
+
+                if (!hasBest || dist2 > bestDist2) {
+                    hasBest = true;
+                    bestDist2 = dist2;
+                    bestDir = d;
+                }
+            }
+
+            if (hasBest) {
+
+                g.dir = bestDir;
+                g.path.clear();
+                g.pathIndex = 0;
+            }
+        }
 
         Direction desired = g.dir;
 
@@ -536,7 +589,13 @@ namespace game {
 
             // forward
             Tile fwd = { g.pos.x + dirToDelta(g.dir).x, g.pos.y + dirToDelta(g.dir).y };
-            bool forwardBlocked = !isWalkable(fwd.x, fwd.y);
+            bool forwardBlocked = true;
+            if (isWalkable(fwd.x, fwd.y)) {
+                bool intoDoorFromOutside = isGhostDoor(fwd.x, fwd.y) && !isInGhostHouse(g.pos.x, g.pos.y);
+                if (!intoDoorFromOutside) {
+                    forwardBlocked = false;
+                    }
+                }
 
             // count possible path neighbor, pathDir
             int open = 0; bool pathDirOpen = false;
@@ -544,6 +603,9 @@ namespace game {
             for (auto d : dirs4) {
                 int nx = g.pos.x + d.x, ny = g.pos.y + d.y;
                 if (isWalkable(nx, ny)) {
+                    if (isGhostDoor(nx, ny) && !isInGhostHouse(g.pos.x, g.pos.y)) {
+                        continue;
+                    }
                     ++open;
                     if (deltaToDir(d) == pathDir) pathDirOpen = true;
                 }
@@ -579,6 +641,38 @@ namespace game {
             }
         }
 
+        //Corner pathfinding fixes
+        {
+            Direction baseDir = (desired != Direction::None) ? desired : g.dir;
+            Tile fwd = { g.pos.x + dirToDelta(baseDir).x,
+                         g.pos.y + dirToDelta(baseDir).y };
+
+            bool blocked = !isWalkable(fwd.x, fwd.y) ||
+                           (isGhostDoor(fwd.x, fwd.y) &&
+                            !isInGhostHouse(g.pos.x, g.pos.y));
+
+            if (blocked) {
+                Direction candidates[3] = {
+                    turnRight(baseDir),
+                    turnLeft(baseDir),
+                    turnBack(baseDir)
+                };
+
+                for (Direction cd : candidates) {
+                    if (cd == Direction::None) continue;
+                    Tile step = dirToDelta(cd);
+                    int nx = g.pos.x + step.x;
+                    int ny = g.pos.y + step.y;
+                    if (!isWalkable(nx, ny)) continue;
+                    if (isGhostDoor(nx, ny) && !isInGhostHouse(g.pos.x, g.pos.y)) {
+                        continue;
+                    }
+                    desired = cd;
+                    break;
+                }
+            }
+        }
+
         // dead end
         if (isDeadEnd(g.pos, g.dir)) {
             desired = turnBack(g.dir);
@@ -593,23 +687,34 @@ namespace game {
             g.moveTimer = 0.0;
             Tile d = dirToDelta(g.dir);
             Tile newPos{ g.pos.x + d.x, g.pos.y + d.y };
-            if (isWalkable(newPos.x, newPos.y)) {
+            bool fromOutsideIntoDoor = isGhostDoor(newPos.x, newPos.y) && !isInGhostHouse(g.pos.x, g.pos.y);
+            if (isWalkable(newPos.x, newPos.y) && !fromOutsideIntoDoor) {
                 g.pos = newPos;
                 g.stepCounter++;
             }
         }
 
         // Collision detection (with player)
-    Tile playerTile{ player.gridX, player.gridY };
+        Tile playerTile{ player.gridX, player.gridY };
+        auto respawnGhost = [&](Ghost& gg) {
+        gg.pos = gg.spawnPos;
+        gg.prevPos = gg.spawnPos;
+        gg.state = GhostState::Patrol;
+        gg.path.clear();
+        gg.pathIndex = 0;
+        gg.patrolPath = generatePatrolLoop(gg.spawnPos);
+        gg.patrolIndex = 0;
+        gg.spawnDelay = 2.0; // small delay before it can chase again
+    };
+
     if (g.pos == playerTile) {
-        // POWER state
+        // POWER state: player eats ghost -> respawn at spawn
         if (player.isPowered) {
-            g.state = GhostState::Stunned;
-            g.stunTimer = 2.0;
+            respawnGhost(g);
             return;
         }
 
-        // Not POWER
+        // Not POWER – decide who "wins" this collision.
         Tile prevP = prevPlayerTile;
         Tile prevG = g.prevPos;
         Tile dP{ playerTile.x - prevP.x, playerTile.y - prevP.y };
@@ -625,9 +730,8 @@ namespace game {
         bool fromBehind = (dP.x == back.x && dP.y == back.y);
 
         if (playerMovedInto && !ghostMovedInto && fromBehind) {
-            // Player behind ghost = stunned
-            g.state = GhostState::Stunned;
-            g.stunTimer = 2.0;
+            // Player behind ghost -> respawn ghost at spawn
+            respawnGhost(g);
         } else {
             // else = playerHit event
             events.playerHit = true;
