@@ -7,7 +7,7 @@
 namespace game {
 
     // Basic enums & shared data structures
-    enum class GhostState { Patrol, Chase, Return, Stunned };
+    enum class GhostState { Patrol, Chase };
     enum class GhostType { Red, Yellow, Blue };
 
     // Player state for MonsterSystem (different from PlayerController's PlayerState enum)
@@ -43,7 +43,6 @@ namespace game {
         GhostState state = GhostState::Patrol;
         GhostType type = GhostType::Blue;
 
-        double stunTimer = 0.0;
         double perceptionRange = 8.0;  // Perception range (reduced from 12.0)
         double spawnDelay = 0.0;  // Delay before monster can start chasing
 
@@ -118,9 +117,12 @@ namespace game {
 
         const Ghost* findRedGhost() const;
         Tile computeChaseTarget(const Ghost& g, const Tile& playerTile) const;
+        std::vector<Tile> computeGhostHouseExitPath(const Ghost& g) const;
 
         void updateGhostAI(Ghost& g, double dt);
         void moveGhost(Ghost& g, double dt);
+
+        std::vector<Tile> ghostDoors;
     };
 
 }

@@ -234,11 +234,8 @@ TextureHandle UIRenderer::resolveMonsterTexture(const GhostRenderInfo& info) {
         case GhostState::Chase:
             frames = !atlas.chaseFrames.empty() ? &atlas.chaseFrames : &atlas.patrolFrames;
             break;
-        case GhostState::Return:
-            frames = !atlas.returnFrames.empty() ? &atlas.returnFrames : &atlas.chaseFrames;
-            break;
-        case GhostState::Stunned:
-            frames = !atlas.stunnedFrames.empty() ? &atlas.stunnedFrames : &atlas.chaseFrames;
+        default:
+            frames = &atlas.chaseFrames;
             break;
     }
 
@@ -532,11 +529,6 @@ void UIRenderer::drawMonsters(const std::vector<GhostRenderInfo>& ghosts) {
         unsigned char r = ghostFallbackR(ghost.type);
         unsigned char g = ghostFallbackG(ghost.type);
         unsigned char b = ghostFallbackB(ghost.type);
-        if (ghost.state == GhostState::Stunned) {
-            r = 40; g = 40; b = 255;
-        } else if (ghost.state == GhostState::Return) {
-            r = g = b = 200;
-        }
         drawSprite(texture, centerX, centerY, static_cast<float>(tileSize), static_cast<float>(tileSize), true, r, g, b);
     }
 }
